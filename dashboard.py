@@ -119,14 +119,25 @@ st.header("Sync Trades")
 if st.button("Sync Trades from Tradovate", type="primary"):
     with st.spinner("Fetching fills from Tradovate..."):
         try:
-            client = TradovateClient.from_env()
+            creds = {
+                "username": st.secrets["TRADOVATE_USERNAME"],
+                "password": st.secrets["TRADOVATE_PASSWORD"],
+                "app_id": st.secrets.get("TRADOVATE_APP_ID", "Sample App"),
+                "app_version": st.secrets.get("TRADOVATE_APP_VERSION", "1.0"),
+                "cid": int(st.secrets.get("TRADOVATE_CID", "8")),
+                "secret": st.secrets["TRADOVATE_SECRET"],
+                "env": st.secrets.get("TRADOVATE_ENV", "live"),
+            }
+            from app.tradovate.auth import get_valid_token
+            from app.tradovate.client import TradovateClient
+            client = TradovateClient(credentials=creds)
             raw_fills = client.get_fills()
             with Session() as db:
                 inserted, skipped = insert_fills(db, raw_fills)
             st.success(f"Sync complete — {inserted} new fill(s) added, {skipped} duplicate(s) skipped.")
             st.rerun()
         except KeyError as exc:
-            st.error(f"Missing environment variable: {exc}. Check your .env file.")
+            st.error(f"Missing secret: {exc}. Add it in the Streamlit app settings under Secrets.")
         except Exception as exc:
             st.error(f"Sync failed: {exc}")
 
