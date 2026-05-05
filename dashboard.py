@@ -143,6 +143,60 @@ if st.button("Sync Trades from Tradovate", type="primary"):
 
 st.divider()
 
+# --- CSV Import ---
+st.header("Import Fills from CSV")
+st.caption("Export your executions from Tradovate (Reports → Executions → Export) and upload the CSV here.")
+
+uploaded = st.file_uploader("Choose a Tradovate CSV file", type="csv")
+if uploaded:
+    try:
+        raw = pd.read_csv(uploaded)
+        st.write("Detected columns:", list(raw.columns))
+
+        col_map = {c.lower().strip(): c for c in raw.columns}
+
+        def find_col(*candidates):
+            for c in candidates:
+                if c in col_map:
+                    return col_map[c]
+            return None
+
+        id_col        = find_col("id", "fillid", "fill id", "orderid", "order id")
+        ts_col        = find_col("timestamp", "date/time", "datetime", "time", "date")
+        inst_col      = find_col("contract", "symbol", "instrument", "name")
+        price_col     = find_col("price", "fill price", "execprice")
+        qty_col       = find_col("qty", "quantity", "size", "filled qty")
+        side_col      = find_col("action", "side", "b/s", "buy/sell", "direction")
+        pnl_col       = find_col("realizedpnl", "realized pnl", "pnl", "realized", "p&l")
+
+        missing = [n for n, c in [("id", id_col), ("timestamp", ts_col), ("contract", inst_col),
+                                   ("price", price_col), ("qty", qty_col), ("side", side_col)] if c is None]
+        if missing:
+            st.error(f"Could not find columns for: {missing}. Please check the column names above.")
+        else:
+            fills_to_insert = []
+            for i, row in raw.iterrows():
+                fills_to_insert.append({
+                    "id": int(row[id_col]) if id_col else i,
+                    "timestamp": str(row[ts_col]),
+                    "contractId": str(row[inst_col]),
+                    "price": float(row[price_col]),
+                    "qty": float(row[qty_col]),
+                    "action": str(row[side_col]),
+                    "realisedPnl": float(row[pnl_col]) if pnl_col and pd.notna(row[pnl_col]) else None,
+                })
+
+            st.dataframe(raw.head(5), use_container_width=True)
+            if st.button("Import into Journal", type="primary"):
+                with Session() as db:
+                    inserted, skipped = insert_fills(db, fills_to_insert)
+                st.success(f"Imported {inserted} new fill(s), {skipped} duplicate(s) skipped.")
+                st.rerun()
+    except Exception as exc:
+        st.error(f"Failed to parse CSV: {exc}")
+
+st.divider()
+
 # --- Fills table ---
 st.header("Fills")
 
